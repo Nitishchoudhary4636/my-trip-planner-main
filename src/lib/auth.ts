@@ -46,6 +46,9 @@ const BOOKINGS_KEY = "tw_bookings";
 const PENDING_BOOKING_KEY = "tw_pending_booking";
 const HASH_PREFIX = "sha256:";
 
+// Server-side storage (in-memory map for non-browser environments)
+const serverStorage = new Map<string, string>();
+
 function createId(): string {
   const c = globalThis.crypto;
   if (c && typeof c.randomUUID === "function") {
@@ -65,7 +68,16 @@ function createId(): string {
 }
 
 function read<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
+  if (typeof window === "undefined") {
+    // Server-side: use in-memory map
+    try {
+      const v = serverStorage.get(key);
+      return v ? (JSON.parse(v) as T) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  // Client-side: use localStorage
   try {
     const v = window.localStorage.getItem(key);
     return v ? (JSON.parse(v) as T) : fallback;
@@ -74,7 +86,12 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 function write<T>(key: string, val: T) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") {
+    // Server-side: use in-memory map
+    serverStorage.set(key, JSON.stringify(val));
+    return;
+  }
+  // Client-side: use localStorage
   window.localStorage.setItem(key, JSON.stringify(val));
 }
 
@@ -173,7 +190,11 @@ export const auth = {
     return { ok: true, user };
   },
   logout: () => {
-    if (typeof window !== "undefined") window.localStorage.removeItem(SESSION_KEY);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(SESSION_KEY);
+    } else {
+      serverStorage.delete(SESSION_KEY);
+    }
   },
   updateProfile: (patch: Partial<User>): { ok: boolean; error?: string; user?: User } => {
     const cur = auth.getCurrentUser();
@@ -217,7 +238,11 @@ export const auth = {
     return withCreatedAt;
   },
   clearPendingBooking: () => {
-    if (typeof window !== "undefined") window.localStorage.removeItem(PENDING_BOOKING_KEY);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(PENDING_BOOKING_KEY);
+    } else {
+      serverStorage.delete(PENDING_BOOKING_KEY);
+    }
   },
   addBooking: (b: Omit<Booking, "id" | "createdAt">): Booking => {
     const all = read<Booking[]>(BOOKINGS_KEY, []);
